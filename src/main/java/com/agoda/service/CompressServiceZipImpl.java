@@ -1,24 +1,21 @@
 package com.agoda.service;
 
+import com.agoda.common.PathDetail;
+import com.agoda.exception.FileAccessException;
+import com.agoda.object.CompressArg;
+import com.agoda.task.CompressFile;
+import com.agoda.task.DecompressFile;
+
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.time.Instant;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.stream.Collectors;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipOutputStream;
 
-/**
- * Created by IntelliJ IDEA.
- *
- * @author: zhihua.su
- * @date: 2019-08-05
- * @time: 20:15
- */
 public class CompressServiceZipImpl implements CompressService {
     private static final long BYTES_PER_MEGABYTE = 1024 * 1024;
 
@@ -29,78 +26,68 @@ public class CompressServiceZipImpl implements CompressService {
     }
 
     @Override
-    public void compress(String input, String output, String maxSize) throws IOException {
-        Path sourceDir = Paths.get(input);
+    public void compress(CompressArg compressArg) throws IOException {
+        // 1. First traverse the directory to get all the files and directory
+        Path sourceDir = Paths.get(compressArg.getInput());
         DirContent dirContent = new DirContent(sourceDir);
         Files.walkFileTree(sourceDir, dirContent);
-        int cores = Runtime.getRuntime().availableProcessors();
-//        cores = 1;
-        System.out.println("cores: " + cores);
-        ThreadPoolExecutor executor = (ThreadPoolExecutor) Executors.newFixedThreadPool(cores);
-//        ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(destDir));
-        for (Path dir: dirContent.dirs) {
-            executor.submit(() -> {
-                System.out.println(Thread.currentThread().getName() + ":" + Thread.currentThread().getId());
-                try {
-                    ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(output + File.separator + Thread.currentThread().getName() + ".zip"));
-                    zos.putNextEntry(new ZipEntry(dir.toString()+"/"));
-                    zos.closeEntry();
-                    zos.close();
-                } catch (IOException e) {
-                    System.out.println("Error reading file: " + dir.toString());
-                }
-            });
-        }
-        for (Path file: dirContent.files) {
 
-        }
-        executor.shutdown();
-        try {
-            executor.awaitTermination(1, TimeUnit.MINUTES);
-        } catch (InterruptedException e) {
-            System.out.println("Interrupted");
-        }
-//        zos.close();
-        long maxByte = Integer.parseInt(maxSize) * BYTES_PER_MEGABYTE;
-        BlockingQueue<Path> queue = new LinkedBlockingQueue<>(dirContent.files); // todo syn
-        Thread[] threads = new Thread[cores];
+        // 2. Then do the compression or decompression
+        int cores = Runtime.getRuntime().availableProcessors();
         long start = System.currentTimeMillis();
-        for (int i=0; i<cores; i++) {
-            Thread thread = new Thread(new CompressFile(queue, sourceDir, output, maxByte));
+        if (compressArg.isCompress()) {
+            compressFiles(dirContent, cores, compressArg);
+        } else {
+            decompressFiles(dirContent, cores, compressArg);
+        }
+        long end = System.currentTimeMillis();
+        System.out.println("Compression/Decompression duration: " + (end - start));
+    }
+
+    private void compressFiles(DirContent dirContent, int cores, CompressArg compressArg) {
+        long maxByte = compressArg.getMaxSize() * BYTES_PER_MEGABYTE;
+
+        // Put all the files and folder into a thread safe queue
+        BlockingQueue<PathDetail> queue = new LinkedBlockingQueue<>();
+        queue.addAll(dirContent.files.stream().map(PathDetail::new).collect(Collectors.toList()));
+        queue.addAll(dirContent.dirs.stream().map(dir -> new PathDetail(dir, true)).collect(Collectors.toList()));
+
+        // Use multiple thread to do parallel compression. The number of thread will be the minimum of cores and number of files to compress
+        int threadCounter = Math.min(cores, dirContent.files.size());
+        Thread[] threads = new Thread[threadCounter];
+        for (int i=0; i<threadCounter; i++) {
+            Thread thread = new Thread(new CompressFile(queue, dirContent.getSourceDir(), compressArg.getOutput(), level, maxByte));
             thread.start();
             threads[i] = thread;
         }
         try {
-            for (int i = 0; i < cores; i++) {
+            for (int i = 0; i < threadCounter; i++) {
                 threads[i].join();
             }
         } catch (InterruptedException e) {
             System.out.println("Interrupted");
         }
-        long end = System.currentTimeMillis();
-        System.out.println("Compression duration: " + (end - start));
     }
 
-    @Override
-    public void decompress(String input, String output) throws IOException {
-        Path sourceDir = Paths.get(input);
-        DirContent dirContent = new DirContent(sourceDir);
-        Files.walkFileTree(sourceDir, Collections.emptySet(), 1, dirContent);
+    private void decompressFiles(DirContent dirContent, int cores, CompressArg compressArg) {
+        // Get all the files with extension of "zip".
         BlockingQueue<Path> queue = dirContent.files.stream().filter(file -> {
             String fileName = file.getFileName().toString();
             int index = fileName.lastIndexOf(".");
             return fileName.substring(index).equals(".zip");
         }).collect(Collectors.toCollection(LinkedBlockingQueue::new));
-        File destDir = new File(output);
+
+        File destDir = new File(compressArg.getOutput());
         if (!destDir.exists()) {
-            destDir.mkdir();
+            if (!destDir.mkdirs()) {
+                throw new FileAccessException("Unable to create directory: " + destDir.toString());
+            }
         }
-        int cores = Runtime.getRuntime().availableProcessors();
-//        cores = 1;
+
+        // Create multiple thread to do decompression. The number of thread equals the number of cores.
         Thread[] threads = new Thread[cores];
-        long start = System.currentTimeMillis();
         for (int i=0; i<cores; i++) {
-            Thread thread = new Thread(new DecompressFile(queue, sourceDir, output));
+            Thread thread = new Thread(new DecompressFile(queue, dirContent.getSourceDir(), compressArg.getOutput()));
             thread.start();
             threads[i] = thread;
         }
@@ -111,8 +98,7 @@ public class CompressServiceZipImpl implements CompressService {
         } catch (InterruptedException e) {
             System.out.println("Interrupted");
         }
-        long end = System.currentTimeMillis();
-        System.out.println("Decompression duration: " + (end - start));
+
     }
 
     class DirContent extends SimpleFileVisitor<Path> {
@@ -138,6 +124,10 @@ public class CompressServiceZipImpl implements CompressService {
                 dirs.add(sourceDir.relativize(dir));
             }
             return FileVisitResult.CONTINUE;
+        }
+
+        public Path getSourceDir() {
+            return sourceDir;
         }
     }
 }

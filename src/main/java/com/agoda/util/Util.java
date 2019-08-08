@@ -2,13 +2,6 @@ package com.agoda.util;
 
 import java.util.Random;
 
-/**
- * Created by IntelliJ IDEA.
- *
- * @author: zhihua.su
- * @date: 2019-08-07
- * @time: 15:53
- */
 public class Util {
     public static String generateRandomStr(int length) {
         int start = 'a';

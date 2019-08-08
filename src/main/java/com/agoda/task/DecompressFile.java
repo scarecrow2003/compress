@@ -1,4 +1,4 @@
-package com.agoda.service;
+package com.agoda.task;
 
 import java.io.*;
 import java.nio.file.Path;
@@ -6,13 +6,6 @@ import java.util.concurrent.BlockingQueue;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
-/**
- * Created by IntelliJ IDEA.
- *
- * @author: zhihua.su
- * @date: 2019-08-07
- * @time: 17:52
- */
 public class DecompressFile implements Runnable {
     private static final int BUFFER_SIZE = 4096;
 

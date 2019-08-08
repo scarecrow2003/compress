@@ -1,16 +1,9 @@
-package com.agoda.service;
+package com.agoda.common;
 
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 
-/**
- * Created by IntelliJ IDEA.
- *
- * @author: zhihua.su
- * @date: 2019-08-07
- * @time: 11:11
- */
 public class LengthOutputStream extends FileOutputStream {
     private long length = 0L;
 

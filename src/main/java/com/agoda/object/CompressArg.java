@@ -1,21 +1,9 @@
 package com.agoda.object;
 
-/**
- * Created by IntelliJ IDEA.
- *
- * @author: zhihua.su
- * @date: 2019-08-05
- * @time: 22:24
- */
-public class CompressPara {
+public class CompressArg {
     private String input;
-
     private String output;
-
-    private String algorithm;
-
-    private int level;
-
+    private boolean isCompress = false;
     private int maxSize;
 
     public String getInput() {
@@ -34,12 +22,12 @@ public class CompressPara {
         this.output = output;
     }
 
-    public String getAlgorithm() {
-        return algorithm;
+    public boolean isCompress() {
+        return isCompress;
     }
 
-    public void setAlgorithm(String algorithm) {
-        this.algorithm = algorithm;
+    public void setCompress(boolean compress) {
+        isCompress = compress;
     }
 
     public int getMaxSize() {
@@ -48,13 +36,5 @@ public class CompressPara {
 
     public void setMaxSize(int maxSize) {
         this.maxSize = maxSize;
-    }
-
-    public int getLevel() {
-        return level;
-    }
-
-    public void setLevel(int level) {
-        this.level = level;
     }
 }

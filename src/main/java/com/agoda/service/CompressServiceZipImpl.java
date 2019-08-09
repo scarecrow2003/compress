@@ -27,33 +27,38 @@ public class CompressServiceZipImpl implements CompressService {
 
     @Override
     public void compress(CompressArg compressArg) throws IOException {
+        long start = System.currentTimeMillis();
+
         // 1. First traverse the directory to get all the files and directory
         Path sourceDir = Paths.get(compressArg.getInput());
-        DirContent dirContent = new DirContent(sourceDir);
+        DirContent dirContent = new DirContent(sourceDir, compressArg.isCompress(), compressArg.getMaxSize() * BYTES_PER_MEGABYTE);
         Files.walkFileTree(sourceDir, dirContent);
 
         // 2. Then do the compression or decompression
         int cores = Runtime.getRuntime().availableProcessors();
-        long start = System.currentTimeMillis();
         if (compressArg.isCompress()) {
             compressFiles(dirContent, cores, compressArg);
         } else {
             decompressFiles(dirContent, cores, compressArg);
         }
+
         long end = System.currentTimeMillis();
         System.out.println("Compression/Decompression duration: " + (end - start));
     }
 
     private void compressFiles(DirContent dirContent, int cores, CompressArg compressArg) {
-        long maxByte = compressArg.getMaxSize() * BYTES_PER_MEGABYTE;
+        // The zip file may contain some meta data, so we set the maximum byte to write less than our limit
+        long maxByte = compressArg.getMaxSize() * BYTES_PER_MEGABYTE - (1024 << 3);
 
         // Put all the files and folder into a thread safe queue
         BlockingQueue<PathDetail> queue = new LinkedBlockingQueue<>();
-        queue.addAll(dirContent.files.stream().map(PathDetail::new).collect(Collectors.toList()));
-        queue.addAll(dirContent.dirs.stream().map(dir -> new PathDetail(dir, true)).collect(Collectors.toList()));
+        queue.addAll(dirContent.getFiles().stream().map(PathDetail::new).collect(Collectors.toList()));
+        queue.addAll(dirContent.getSmallFiles().stream().map(PathDetail::new).collect(Collectors.toList()));
+        queue.addAll(dirContent.getDirs().stream().map(dir -> new PathDetail(dir, true)).collect(Collectors.toList()));
 
         // Use multiple thread to do parallel compression. The number of thread will be the minimum of cores and number of files to compress
-        int threadCounter = Math.min(cores, dirContent.files.size());
+        // todo
+        int threadCounter = Math.min(cores, dirContent.getFiles().size());
         Thread[] threads = new Thread[threadCounter];
         for (int i=0; i<threadCounter; i++) {
             Thread thread = new Thread(new CompressFile(queue, dirContent.getSourceDir(), compressArg.getOutput(), level, maxByte));
@@ -71,7 +76,7 @@ public class CompressServiceZipImpl implements CompressService {
 
     private void decompressFiles(DirContent dirContent, int cores, CompressArg compressArg) {
         // Get all the files with extension of "zip".
-        BlockingQueue<Path> queue = dirContent.files.stream().filter(file -> {
+        BlockingQueue<Path> queue = dirContent.getFiles().stream().filter(file -> {
             String fileName = file.getFileName().toString();
             int index = fileName.lastIndexOf(".");
             return fileName.substring(index).equals(".zip");
@@ -104,17 +109,33 @@ public class CompressServiceZipImpl implements CompressService {
     class DirContent extends SimpleFileVisitor<Path> {
         private Path sourceDir;
 
+        private boolean isCompress;
+
+        private long size;
+
         private List<Path> dirs = new ArrayList<>();
 
         private List<Path> files = new ArrayList<>();
 
-        public DirContent(Path sourceDir) {
+        private List<Path> smallFiles = new ArrayList<>();
+
+        public DirContent(Path sourceDir, boolean isCompress, long size) {
             this.sourceDir = sourceDir;
+            this.isCompress = isCompress;
+            this.size = size;
         }
 
         @Override
         public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) {
-            files.add(sourceDir.relativize(file));
+            // we put big and small files in different list so we can optimize the number of thread to compress the files
+            // and optimize the number of output files. However this is at the cost of spend additional time to access
+            // the files to get their size. But since time constraints is not a requirement for this problem, we can leave
+            // it as it is now.
+            if (isCompress && file.toFile().length() < size) {
+                smallFiles.add(sourceDir.relativize(file));
+            } else {
+                files.add(sourceDir.relativize(file));
+            }
             return FileVisitResult.CONTINUE;
         }
 
@@ -128,6 +149,18 @@ public class CompressServiceZipImpl implements CompressService {
 
         public Path getSourceDir() {
             return sourceDir;
+        }
+
+        public List<Path> getDirs() {
+            return dirs;
+        }
+
+        public List<Path> getFiles() {
+            return files;
+        }
+
+        public List<Path> getSmallFiles() {
+            return smallFiles;
         }
     }
 }

@@ -33,12 +33,16 @@ public class CompressFile implements Runnable {
 
     @Override
     public void run() {
+        // Use random file name for generated zip file. If the generated file is greater than the size limit, it will be
+        // divided into small chunk. The extension of the first chunk is ".zip" and subsequent chunks are "001", "002",
+        // "003", etc.
         String fileName = destDir + File.separator + Util.generateRandomStr(10);
-        int current = 0;
+        int currentChunk = 0;
+        // LengthOutputStream is extended from OutputStream to add the function of recording the length of the output stream
         LengthOutputStream fos = null;
         ZipOutputStream zos = null;
         boolean started = false;
-        long maxToWrite = maxByte; //todo minus file description
+        long maxToWrite = maxByte;
         PathDetail file;
         try {
             while ((file = files.poll()) != null) {
@@ -49,9 +53,12 @@ public class CompressFile implements Runnable {
                     started = true;
                 }
                 long offset = 0;
+                // If the returned result of doCompress() is 0, it means the whole file is compressed, so we jump out of
+                // the while loop and process the next file. If the returned result is not 0, it means the zip chunk reached
+                // its size limit, so we close the current output stream and create another chunk to write.
                 while ((offset = doCompress(zos, maxToWrite, file, offset)) != 0) {
                     zos.close();
-                    fos = new LengthOutputStream(fileName + String.format(".%03d", ++current));
+                    fos = new LengthOutputStream(fileName + String.format(".%03d", ++currentChunk));
                     zos = new ZipOutputStream(fos);
                     zos.setLevel(level);
                     maxToWrite = maxByte;

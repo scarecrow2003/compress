@@ -5,6 +5,9 @@ import com.agoda.exception.UnsupportedAlgorithm;
 import com.agoda.service.CompressService;
 import com.agoda.service.CompressServiceZipImpl;
 
+/**
+ * @author zhihua.su
+ */
 public class CompressServiceFactory {
     public static CompressService getCompressService(CompressAlgorithm compressAlgorithm, int level) {
         if (CompressAlgorithm.ZIP.equals(compressAlgorithm)) {

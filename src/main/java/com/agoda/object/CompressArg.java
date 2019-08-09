@@ -1,5 +1,8 @@
 package com.agoda.object;
 
+/**
+ * @author zhihua.su
+ */
 public class CompressArg {
     private String input;
     private String output;

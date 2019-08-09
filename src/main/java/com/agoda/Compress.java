@@ -10,12 +10,14 @@ import java.io.IOException;
 /**
  * Since the requirement requires not use third party library to do the compression, the program will not use Spring or
  * any other framework.
+ *
+ * @author zhihua.su
  */
 public class Compress {
 
     public static void main(String[] args) throws IOException {
         CompressArg compressArg = validateInput(args);
-        // we may get the compress algorithm from command line in future if we implement other algorithm
+        // we may get the compress algorithm from command line in future if we implement other algorithms
         CompressAlgorithm compressAlgorithm = CompressAlgorithm.ZIP;
         // we may get the compress level in future if we want to change the compress level
         int compressLevel = 9;

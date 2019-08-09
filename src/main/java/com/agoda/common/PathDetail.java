@@ -2,6 +2,9 @@ package com.agoda.common;
 
 import java.nio.file.Path;
 
+/**
+ * @author zhihua.su
+ */
 public class PathDetail {
     private Path path;
     private boolean isDir;

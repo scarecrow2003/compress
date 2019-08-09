@@ -1,5 +1,6 @@
 package com.agoda.service;
 
+import com.agoda.common.DirContent;
 import com.agoda.common.PathDetail;
 import com.agoda.exception.FileAccessException;
 import com.agoda.object.CompressArg;
@@ -8,14 +9,19 @@ import com.agoda.task.DecompressFile;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.*;
-import java.nio.file.attribute.BasicFileAttributes;
-import java.util.ArrayList;
-import java.util.List;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
+/**
+ * @author zhihua.su
+ */
 public class CompressServiceZipImpl implements CompressService {
     private static final long BYTES_PER_MEGABYTE = 1024 * 1024;
 
@@ -56,22 +62,17 @@ public class CompressServiceZipImpl implements CompressService {
         queue.addAll(dirContent.getSmallFiles().stream().map(PathDetail::new).collect(Collectors.toList()));
         queue.addAll(dirContent.getDirs().stream().map(dir -> new PathDetail(dir, true)).collect(Collectors.toList()));
 
-        // Use multiple thread to do parallel compression. The number of thread will be the minimum of cores and number of files to compress
-        // todo
-        int threadCounter = Math.min(cores, dirContent.getFiles().size());
-        Thread[] threads = new Thread[threadCounter];
-        for (int i=0; i<threadCounter; i++) {
-            Thread thread = new Thread(new CompressFile(queue, dirContent.getSourceDir(), compressArg.getOutput(), level, maxByte));
-            thread.start();
-            threads[i] = thread;
-        }
+        // Use multiple thread to do parallel compression.
+        int threadCounter = getThreadCounterForCompression(cores, dirContent.getFiles().size(), (int) ((dirContent.getSmallSize() + maxByte - 1) / maxByte));
+        ThreadPoolExecutor threadPoolExecutor = (ThreadPoolExecutor) Executors.newFixedThreadPool(threadCounter);
         try {
-            for (int i = 0; i < threadCounter; i++) {
-                threads[i].join();
-            }
+            threadPoolExecutor.invokeAll(IntStream.rangeClosed(1, threadCounter)
+                    .mapToObj(i -> new CompressFile(queue, dirContent.getSourceDir(), compressArg.getOutput(), level, maxByte))
+                    .collect(Collectors.toList()));
         } catch (InterruptedException e) {
             System.out.println("Interrupted");
         }
+        threadPoolExecutor.shutdown();
     }
 
     private void decompressFiles(DirContent dirContent, int cores, CompressArg compressArg) {
@@ -79,7 +80,7 @@ public class CompressServiceZipImpl implements CompressService {
         BlockingQueue<Path> queue = dirContent.getFiles().stream().filter(file -> {
             String fileName = file.getFileName().toString();
             int index = fileName.lastIndexOf(".");
-            return fileName.substring(index).equals(".zip");
+            return ".zip".equals(fileName.substring(index));
         }).collect(Collectors.toCollection(LinkedBlockingQueue::new));
 
         File destDir = new File(compressArg.getOutput());
@@ -90,77 +91,27 @@ public class CompressServiceZipImpl implements CompressService {
         }
 
         // Create multiple thread to do decompression. The number of thread equals the number of cores.
-        Thread[] threads = new Thread[cores];
-        for (int i=0; i<cores; i++) {
-            Thread thread = new Thread(new DecompressFile(queue, dirContent.getSourceDir(), compressArg.getOutput()));
-            thread.start();
-            threads[i] = thread;
-        }
+        ThreadPoolExecutor threadPoolExecutor = (ThreadPoolExecutor) Executors.newFixedThreadPool(cores);
         try {
-            for (int i = 0; i < cores; i++) {
-                threads[i].join();
-            }
+            threadPoolExecutor.invokeAll(IntStream.rangeClosed(1, cores)
+                    .mapToObj(i -> new DecompressFile(queue, dirContent.getSourceDir(), compressArg.getOutput()))
+                    .collect(Collectors.toList()));
         } catch (InterruptedException e) {
             System.out.println("Interrupted");
         }
-
+        threadPoolExecutor.shutdown();
     }
 
-    class DirContent extends SimpleFileVisitor<Path> {
-        private Path sourceDir;
-
-        private boolean isCompress;
-
-        private long size;
-
-        private List<Path> dirs = new ArrayList<>();
-
-        private List<Path> files = new ArrayList<>();
-
-        private List<Path> smallFiles = new ArrayList<>();
-
-        public DirContent(Path sourceDir, boolean isCompress, long size) {
-            this.sourceDir = sourceDir;
-            this.isCompress = isCompress;
-            this.size = size;
-        }
-
-        @Override
-        public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) {
-            // we put big and small files in different list so we can optimize the number of thread to compress the files
-            // and optimize the number of output files. However this is at the cost of spend additional time to access
-            // the files to get their size. But since time constraints is not a requirement for this problem, we can leave
-            // it as it is now.
-            if (isCompress && file.toFile().length() < size) {
-                smallFiles.add(sourceDir.relativize(file));
-            } else {
-                files.add(sourceDir.relativize(file));
-            }
-            return FileVisitResult.CONTINUE;
-        }
-
-        @Override
-        public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
-            if (!dir.equals(sourceDir)) {
-                dirs.add(sourceDir.relativize(dir));
-            }
-            return FileVisitResult.CONTINUE;
-        }
-
-        public Path getSourceDir() {
-            return sourceDir;
-        }
-
-        public List<Path> getDirs() {
-            return dirs;
-        }
-
-        public List<Path> getFiles() {
-            return files;
-        }
-
-        public List<Path> getSmallFiles() {
-            return smallFiles;
-        }
+    private int getThreadCounterForCompression(int cores, int bigFileCounter, int smallFileCounter) {
+        // To get the number of thread, we first get how many thread needed for big files and small files. The final result
+        // will be the minimum of this counter and the number of cores.
+        // Here if we use bigFileCounter only, we end up with less thread and less output files. The small files will be
+        // compressed together with the big files. If we use bigFileCounter + smallFileCounter, we creat more thread and
+        // more output files. The small files are compressed separately. The compression speed will be faster since we create
+        // more thread.
+        // The above difference only applies to small number of files. If we have large number of files, the thread number
+        // will be limited by number of cores. So it doesn't matter whether we use bigFileCounter or bigFileCounter + smallFileCounter.
+        int result = bigFileCounter + smallFileCounter;
+        return Math.min(result, cores);
     }
 }

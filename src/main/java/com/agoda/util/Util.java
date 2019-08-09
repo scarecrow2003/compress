@@ -2,6 +2,9 @@ package com.agoda.util;
 
 import java.util.Random;
 
+/**
+ * @author zhihua.su
+ */
 public class Util {
     public static String generateRandomStr(int length) {
         int start = 'a';

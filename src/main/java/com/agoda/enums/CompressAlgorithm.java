@@ -1,5 +1,9 @@
 package com.agoda.enums;
 
+/**
+ * @author zhihua.su
+ */
+
 public enum CompressAlgorithm {
     ZIP(0);
 

@@ -3,10 +3,14 @@ package com.agoda.task;
 import java.io.*;
 import java.nio.file.Path;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Callable;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
-public class DecompressFile implements Runnable {
+/**
+ * @author zhihua.su
+ */
+public class DecompressFile implements Callable<Integer> {
     private static final int BUFFER_SIZE = 4096;
 
     private final BlockingQueue<Path> files;
@@ -22,8 +26,9 @@ public class DecompressFile implements Runnable {
     }
 
     @Override
-    public void run() {
+    public Integer call() {
         Path file;
+        int fileDecompressed = 0;
         try {
             while ((file = files.poll()) != null) {
                 int current = 0;
@@ -72,9 +77,11 @@ public class DecompressFile implements Runnable {
                     }
                 }
                 zis.close();
+                fileDecompressed++;
             }
         } catch (IOException e) {
             System.out.println("Error reading file");
         }
+        return fileDecompressed;
     }
 }

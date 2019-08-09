@@ -7,10 +7,14 @@ import com.agoda.util.Util;
 import java.io.*;
 import java.nio.file.Path;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Callable;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
-public class CompressFile implements Runnable {
+/**
+ * @author zhihua.su
+ */
+public class CompressFile implements Callable<Integer> {
     private static final int BUFFER_SIZE = 4096;
 
     private final BlockingQueue<PathDetail> files;
@@ -32,7 +36,7 @@ public class CompressFile implements Runnable {
     }
 
     @Override
-    public void run() {
+    public Integer call() {
         // Use random file name for generated zip file. If the generated file is greater than the size limit, it will be
         // divided into small chunk. The extension of the first chunk is ".zip" and subsequent chunks are "001", "002",
         // "003", etc.
@@ -44,6 +48,7 @@ public class CompressFile implements Runnable {
         boolean started = false;
         long maxToWrite = maxByte;
         PathDetail file;
+        int fileCompressed = 0;
         try {
             while ((file = files.poll()) != null) {
                 if (!started) {
@@ -64,6 +69,7 @@ public class CompressFile implements Runnable {
                     maxToWrite = maxByte;
                 }
                 maxToWrite = maxByte - fos.getLength();
+                fileCompressed++;
             }
             if (zos != null) {
                 zos.close();
@@ -72,6 +78,7 @@ public class CompressFile implements Runnable {
             System.out.println("Error writing to file");
             e.printStackTrace();
         }
+        return fileCompressed;
     }
 
     /**

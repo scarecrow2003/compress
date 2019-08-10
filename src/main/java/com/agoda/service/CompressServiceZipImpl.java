@@ -23,7 +23,7 @@ import java.util.stream.IntStream;
  * @author zhihua.su
  */
 public class CompressServiceZipImpl implements CompressService {
-    private static final long BYTES_PER_MEGABYTE = 1024 * 1024;
+    public static final long BYTES_PER_MEGABYTE = 1024 * 1024;
 
     private final int level;
 
@@ -54,7 +54,7 @@ public class CompressServiceZipImpl implements CompressService {
 
     private void compressFiles(DirContent dirContent, int cores, CompressArg compressArg) {
         // The zip file may contain some meta data, so we set the maximum byte to write less than our limit
-        long maxByte = compressArg.getMaxSize() * BYTES_PER_MEGABYTE - (1024 << 3);
+        long maxByte = compressArg.getMaxSize() * BYTES_PER_MEGABYTE - (1024 << 1);
 
         // Put all the files and folder into a thread safe queue
         BlockingQueue<PathDetail> queue = new LinkedBlockingQueue<>();

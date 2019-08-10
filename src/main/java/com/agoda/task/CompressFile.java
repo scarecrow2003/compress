@@ -43,33 +43,42 @@ public class CompressFile implements Callable<Integer> {
         String fileName = destDir + File.separator + Util.generateRandomStr(10);
         int currentChunk = 0;
         // LengthOutputStream is extended from OutputStream to add the function of recording the length of the output stream
-        LengthOutputStream fos = null;
+        LengthOutputStream fos;
         ZipOutputStream zos = null;
-        boolean started = false;
         long maxToWrite = maxByte;
         PathDetail file;
         int fileCompressed = 0;
         try {
-            while ((file = files.poll()) != null) {
-                if (!started) {
-                    fos = new LengthOutputStream(fileName + ".zip");
-                    zos = new ZipOutputStream(fos);
-                    zos.setLevel(level);
-                    started = true;
+            if ((file = files.poll()) != null) {
+                fos = new LengthOutputStream(fileName + ".zip");
+                zos = new ZipOutputStream(fos);
+                zos.setLevel(level);
+                while (file != null) {
+                    long offset = 0;
+                    // If the returned result of doCompress() is 0, it means the whole file is compressed, so we jump out of
+                    // the inner while loop and process the next file. If the returned result is not 0, it means the zip chunk
+                    // reached its size limit, so we close the current output stream and create another chunk to write.
+                    while ((offset = doCompress(zos, maxToWrite, file, offset)) != 0) {
+                        zos.close();
+                        fos = new LengthOutputStream(fileName + String.format(".%03d", ++currentChunk));
+                        zos = new ZipOutputStream(fos);
+                        zos.setLevel(level);
+                        maxToWrite = maxByte;
+                    }
+                    maxToWrite = maxByte - fos.getLength();
+                    if (maxToWrite <= 0) {
+                        // In some extreme case, when one file is completed compressed, the compressed file reaches its
+                        // size limit at the same time. In such case, we create a new zip file to hold the rest of files.
+                        zos.close();
+                        fileName = destDir + File.separator + Util.generateRandomStr(10);
+                        fos = new LengthOutputStream(fileName + ".zip");
+                        zos = new ZipOutputStream(fos);
+                        zos.setLevel(level);
+                        maxToWrite = maxByte;
+                    }
+                    fileCompressed++;
+                    file = files.poll();
                 }
-                long offset = 0;
-                // If the returned result of doCompress() is 0, it means the whole file is compressed, so we jump out of
-                // the while loop and process the next file. If the returned result is not 0, it means the zip chunk reached
-                // its size limit, so we close the current output stream and create another chunk to write.
-                while ((offset = doCompress(zos, maxToWrite, file, offset)) != 0) {
-                    zos.close();
-                    fos = new LengthOutputStream(fileName + String.format(".%03d", ++currentChunk));
-                    zos = new ZipOutputStream(fos);
-                    zos.setLevel(level);
-                    maxToWrite = maxByte;
-                }
-                maxToWrite = maxByte - fos.getLength();
-                fileCompressed++;
             }
             if (zos != null) {
                 zos.close();

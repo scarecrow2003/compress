@@ -21,14 +21,14 @@ public class DirContentTest {
     public void visitFileTest() throws IOException {
         Path sourceDir = Paths.get("src/test/fixture/input");
         DirContent dirContent = new DirContent(sourceDir, true, BYTES_PER_MEGABYTE);
-        Path filePath = Paths.get("src/test/fixture/input/text");
+        Path filePath = Paths.get("src/test/fixture/input/folder2/small1");
         long expectedSize = filePath.toFile().length();
         dirContent.visitFile(filePath, Files.readAttributes(filePath, BasicFileAttributes.class));
         assertEquals(1, dirContent.getSmallFiles().size());
         assertEquals(expectedSize, dirContent.getSmallSize());
         assertEquals(0, dirContent.getFiles().size());
 
-        Path largeFilePath = Paths.get("src/test/fixture/input/large");
+        Path largeFilePath = Paths.get("src/test/fixture/input/folder2/large");
         dirContent.visitFile(largeFilePath, Files.readAttributes(largeFilePath, BasicFileAttributes.class));
         assertEquals(1, dirContent.getSmallFiles().size());
         assertEquals(expectedSize, dirContent.getSmallSize());

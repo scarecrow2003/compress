@@ -14,7 +14,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 /**
  * @author zhihua.su
  */
-
 public class DirContentTest {
 
     @Test
